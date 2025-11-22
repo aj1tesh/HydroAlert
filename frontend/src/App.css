@@ -1,0 +1,8 @@
+/* Additional app-specific styles */
+.map-container {
+  height: 400px;
+  width: 100%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+

@@ -1,28 +1,75 @@
 import cdsapi
 import numpy as np
 import json
-import requests
 from datetime import datetime, timedelta
 import xarray as xr
 import os
+import math
+import re
 
 # ============= CONFIGURATION =============
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "gemma3:12b"
 
 class FloodPredictor:
     def __init__(self):
         self.cds_client = cdsapi.Client()
+    
+    def _clean_json_values(self, obj):
+        """
+        Recursively clean NaN, Inf, and -Inf values from a dictionary/list
+        to make it JSON serializable. Replaces NaN with None, Inf with large number.
+        """
+        if isinstance(obj, dict):
+            return {key: self._clean_json_values(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._clean_json_values(item) for item in obj]
+        elif isinstance(obj, float):
+            if math.isnan(obj):
+                return None
+            elif math.isinf(obj):
+                # Replace infinity with a large but reasonable number
+                return 1e10 if obj > 0 else -1e10
+            else:
+                return obj
+        elif isinstance(obj, np.floating):
+            # Handle numpy float types
+            if np.isnan(obj):
+                return None
+            elif np.isinf(obj):
+                return 1e10 if obj > 0 else -1e10
+            else:
+                return float(obj)
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        else:
+            return obj
         
     def fetch_weather_data(self, lat, lon, days=7):
         """
         Fetch relevant weather data from CDS ERA5 for flood prediction
+        
+        Note: ERA5 reanalysis data has a delay of ~5-7 days, so we adjust
+        the end date to ensure we only request available data.
         """
         print(f"\n[INFO] Fetching weather data for coordinates: {lat}, {lon}")
         
         # Calculate date range
-        end_date = datetime.now()
+        # ERA5 data has a delay of ~5-7 days, so we use 7 days ago as the latest available date
+        # This ensures we don't request future/unavailable data
+        today = datetime.now()
+        data_delay_days = 7  # ERA5 typically has 5-7 day delay
+        latest_available_date = today - timedelta(days=data_delay_days)
+        
+        # Use the latest available date as end_date, or go back further if needed
+        end_date = latest_available_date
         start_date = end_date - timedelta(days=days)
+        
+        # Ensure we don't go too far back (ERA5 data starts from 1940)
+        if start_date.year < 1940:
+            start_date = datetime(1940, 1, 1)
+            print(f"[WARNING] Adjusted start date to 1940-01-01 (ERA5 data limit)")
+        
+        print(f"[INFO] Requesting data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        print(f"[INFO] Note: Using historical data due to ERA5 delay (~{data_delay_days} days)")
         
         # Prepare request parameters
         years = list(set([start_date.strftime('%Y'), end_date.strftime('%Y')]))
@@ -72,6 +119,66 @@ class FloodPredictor:
             print(f"[SUCCESS] Data downloaded to {output_file}")
             return output_file
         except Exception as e:
+            error_msg = str(e)
+            # Check if error is about data availability
+            if "not available yet" in error_msg or "latest date available" in error_msg.lower():
+                print(f"[ERROR] CDS API request failed: {e}")
+                print(f"[INFO] ERA5 data has a delay. The error suggests using dates before the latest available date.")
+                print(f"[INFO] Try reducing the number of days or using historical dates.")
+                # Try to extract the latest available date from error message
+                if "latest date available" in error_msg.lower():
+                    # Error format: "The latest date available for this dataset is: 2025-11-14 05:00"
+                    try:
+                        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', error_msg)
+                        if date_match:
+                            latest_date_str = date_match.group(1)
+                            latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d')
+                            print(f"[INFO] Latest available date: {latest_date_str}")
+                            print(f"[INFO] Retrying with adjusted date range...")
+                            # Retry with the latest available date
+                            end_date = latest_date
+                            start_date = end_date - timedelta(days=days)
+                            
+                            # Recalculate parameters
+                            years = list(set([start_date.strftime('%Y'), end_date.strftime('%Y')]))
+                            months = list(set([start_date.strftime('%m'), end_date.strftime('%m')]))
+                            current = start_date
+                            days_list = []
+                            while current <= end_date:
+                                days_list.append(current.strftime('%d'))
+                                current += timedelta(days=1)
+                            days_list = list(set(days_list))
+                            
+                            print(f"[INFO] Retrying with dates: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+                            
+                            # Retry the request
+                            self.cds_client.retrieve(
+                                'reanalysis-era5-single-levels',
+                                {
+                                    'product_type': 'reanalysis',
+                                    'variable': [
+                                        'total_precipitation',
+                                        '2m_temperature',
+                                        'soil_temperature_level_1',
+                                        'volumetric_soil_water_layer_1',
+                                    ],
+                                    'year': years,
+                                    'month': months,
+                                    'day': days_list,
+                                    'time': [
+                                        '00:00', '06:00', '12:00', '18:00'
+                                    ],
+                                    'area': area,
+                                    'format': 'grib',
+                                },
+                                output_file
+                            )
+                            print(f"[SUCCESS] Data downloaded to {output_file} (using adjusted dates)")
+                            return output_file
+                    except Exception as retry_error:
+                        print(f"[ERROR] Retry also failed: {retry_error}")
+                        raise Exception(f"CDS API data availability error. Latest available date may be in the past. Original error: {error_msg}")
+            
             print(f"[ERROR] CDS API request failed: {e}")
             raise
     
@@ -127,23 +234,57 @@ class FloodPredictor:
                     precip = ds['tp'].values
                     precip_mm = precip * 1000  # m to mm
                     
-                    # Overall statistics
-                    analysis['total_precipitation_mm'] = float(np.nansum(precip_mm))
-                    analysis['max_hourly_precip_mm'] = float(np.nanmax(precip_mm))
-                    analysis['avg_precipitation_mm'] = float(np.nanmean(precip_mm))
-                    analysis['precip_days'] = int(np.sum(precip_mm > 1.0))
+                    # Overall statistics - handle NaN/Inf values
+                    total_precip = np.nansum(precip_mm)
+                    if np.all(np.isnan(precip_mm)):
+                        max_precip = 0.0
+                        avg_precip = 0.0
+                    else:
+                        max_precip = np.nanmax(precip_mm)
+                        avg_precip = np.nanmean(precip_mm)
+                    
+                    analysis['total_precipitation_mm'] = float(total_precip) if not (math.isnan(total_precip) or math.isinf(total_precip)) else 0.0
+                    analysis['max_hourly_precip_mm'] = float(max_precip) if not (math.isnan(max_precip) or math.isinf(max_precip)) else 0.0
+                    analysis['avg_precipitation_mm'] = float(avg_precip) if not (math.isnan(avg_precip) or math.isinf(avg_precip)) else 0.0
+                    analysis['precip_days'] = int(np.nansum(precip_mm > 1.0))
                     
                     # Time series for temporal analysis
                     if precip_mm.ndim >= 1:
                         # Flatten spatial dimensions, keep time
                         if precip_mm.ndim == 3:  # time, lat, lon
-                            precip_time = np.mean(precip_mm, axis=(1, 2))
+                            precip_time = np.nanmean(precip_mm, axis=(1, 2))
                         elif precip_mm.ndim == 2:  # time, space
-                            precip_time = np.mean(precip_mm, axis=1)
+                            precip_time = np.nanmean(precip_mm, axis=1)
                         else:
                             precip_time = precip_mm
                         
-                        time_series['precipitation_mm'] = precip_time.tolist()
+                        # Ensure it's 1D and flatten if needed
+                        precip_time = precip_time.flatten() if precip_time.ndim > 1 else precip_time
+                        
+                        # Convert to list, replacing NaN with None
+                        def clean_value(x):
+                            """Helper to clean a single value"""
+                            if isinstance(x, (list, np.ndarray)):
+                                # If it's still a list/array, take the mean
+                                x = np.nanmean(np.array(x))
+                            if isinstance(x, np.floating):
+                                if np.isnan(x):
+                                    return None
+                                return float(x)
+                            elif isinstance(x, float):
+                                if math.isnan(x):
+                                    return None
+                                return x
+                            else:
+                                try:
+                                    val = float(x)
+                                    if math.isnan(val):
+                                        return None
+                                    return val
+                                except (ValueError, TypeError):
+                                    return None
+                        
+                        time_series['precipitation_mm'] = [clean_value(x) for x in precip_time.tolist()]
                     
                     print(f"[INFO] Precipitation - Total: {analysis['total_precipitation_mm']:.2f}mm")
             
@@ -153,8 +294,15 @@ class FloodPredictor:
                 if 't2m' in ds.data_vars:
                     temp = ds['t2m'].values
                     temp_c = temp - 273.15  # K to C
-                    analysis['avg_temperature_c'] = float(np.nanmean(temp_c))
-                    analysis['min_temperature_c'] = float(np.nanmin(temp_c))
+                    if np.all(np.isnan(temp_c)):
+                        avg_temp = 0.0
+                        min_temp = 0.0
+                    else:
+                        avg_temp = np.nanmean(temp_c)
+                        min_temp = np.nanmin(temp_c)
+                    
+                    analysis['avg_temperature_c'] = float(avg_temp) if not (math.isnan(avg_temp) or math.isinf(avg_temp)) else 0.0
+                    analysis['min_temperature_c'] = float(min_temp) if not (math.isnan(min_temp) or math.isinf(min_temp)) else 0.0
                     print(f"[INFO] Temperature - Avg: {analysis['avg_temperature_c']:.1f}°C")
             
             # Process soil moisture with time series
@@ -162,20 +310,55 @@ class FloodPredictor:
                 ds = datasets['swvl1']
                 if 'swvl1' in ds.data_vars:
                     soil_moisture = ds['swvl1'].values
-                    analysis['avg_soil_moisture'] = float(np.nanmean(soil_moisture))
-                    analysis['max_soil_moisture'] = float(np.nanmax(soil_moisture))
-                    analysis['soil_saturation_ratio'] = float(np.mean(soil_moisture > 0.4))
+                    if np.all(np.isnan(soil_moisture)):
+                        avg_soil = 0.0
+                        max_soil = 0.0
+                        sat_ratio = 0.0
+                    else:
+                        avg_soil = np.nanmean(soil_moisture)
+                        max_soil = np.nanmax(soil_moisture)
+                        sat_ratio = np.nanmean(soil_moisture > 0.4)
+                    
+                    analysis['avg_soil_moisture'] = float(avg_soil) if not (math.isnan(avg_soil) or math.isinf(avg_soil)) else 0.0
+                    analysis['max_soil_moisture'] = float(max_soil) if not (math.isnan(max_soil) or math.isinf(max_soil)) else 0.0
+                    analysis['soil_saturation_ratio'] = float(sat_ratio) if not (math.isnan(sat_ratio) or math.isinf(sat_ratio)) else 0.0
                     
                     # Time series
                     if soil_moisture.ndim >= 1:
                         if soil_moisture.ndim == 3:
-                            soil_time = np.mean(soil_moisture, axis=(1, 2))
+                            soil_time = np.nanmean(soil_moisture, axis=(1, 2))
                         elif soil_moisture.ndim == 2:
-                            soil_time = np.mean(soil_moisture, axis=1)
+                            soil_time = np.nanmean(soil_moisture, axis=1)
                         else:
                             soil_time = soil_moisture
                         
-                        time_series['soil_moisture'] = soil_time.tolist()
+                        # Ensure it's 1D and flatten if needed
+                        soil_time = soil_time.flatten() if soil_time.ndim > 1 else soil_time
+                        
+                        # Convert to list, replacing NaN with None
+                        def clean_value(x):
+                            """Helper to clean a single value"""
+                            if isinstance(x, (list, np.ndarray)):
+                                # If it's still a list/array, take the mean
+                                x = np.nanmean(np.array(x))
+                            if isinstance(x, np.floating):
+                                if np.isnan(x):
+                                    return None
+                                return float(x)
+                            elif isinstance(x, float):
+                                if math.isnan(x):
+                                    return None
+                                return x
+                            else:
+                                try:
+                                    val = float(x)
+                                    if math.isnan(val):
+                                        return None
+                                    return val
+                                except (ValueError, TypeError):
+                                    return None
+                        
+                        time_series['soil_moisture'] = [clean_value(x) for x in soil_time.tolist()]
                     
                     print(f"[INFO] Soil Moisture - Avg: {analysis['avg_soil_moisture']:.3f}")
             
@@ -366,39 +549,6 @@ class FloodPredictor:
             'interpretation': f"{base_prob*100:.1f}% (±{data_uncertainty*100:.1f}%)"
         }
     
-    def query_ollama(self, prompt):
-        """
-        Query local Ollama model for AI-powered analysis
-        """
-        print("\n[INFO] Querying Ollama for AI analysis...")
-        
-        payload = {
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json"
-        }
-        
-        try:
-            response = requests.post(
-                OLLAMA_URL,
-                json=payload,
-                timeout=90
-            )
-            response.raise_for_status()
-            
-            result = response.json()
-            if 'response' in result:
-                try:
-                    return json.loads(result['response'])
-                except json.JSONDecodeError:
-                    return {"raw_response": result['response']}
-            return result
-            
-        except Exception as e:
-            print(f"[WARNING] Ollama query failed: {e}")
-            return None
-    
     def predict_flood(self, lat, lon, days=7):
         """
         Main prediction function with comprehensive risk assessment
@@ -418,50 +568,17 @@ class FloodPredictor:
         # Step 3: Calculate comprehensive risk
         risk_assessment = self.calculate_comprehensive_flood_risk(analysis)
         
-        # Step 4: Query Ollama for interpretation
-        prompt = f"""You are a flood risk assessment expert. Analyze this comprehensive weather data and provide detailed insights.
-
-Location: Latitude {lat}, Longitude {lon}
-Analysis Period: Last {days} days
-
-Weather Data:
-{json.dumps(analysis, indent=2)}
-
-Risk Assessment:
-{json.dumps(risk_assessment, indent=2)}
-
-Provide a JSON response with:
-{{
-  "overall_assessment": <string: brief overall assessment>,
-  "severity_analysis": <string: explain the different severity probabilities>,
-  "temporal_analysis": <string: explain how risk changes over time windows>,
-  "confidence_notes": <string: explain the confidence level and uncertainty>,
-  "recommended_actions": [<list of specific actions>],
-  "key_concerns": [<list of specific concerns>],
-  "monitoring_priorities": [<what to monitor closely>]
-}}
-
-Be specific and actionable. Reference the actual probabilities."""
-
-        ollama_result = self.query_ollama(prompt)
-        
-        # Step 5: Compile final result
+        # Step 4: Compile final result
         final_result = {
             "location": {"lat": lat, "lon": lon},
             "timestamp": datetime.now().isoformat(),
             "analysis_period_days": days,
             "weather_analysis": analysis,
-            "risk_assessment": risk_assessment,
-            "ai_interpretation": ollama_result if ollama_result else {
-                "overall_assessment": "AI analysis unavailable. Using deterministic model.",
-                "severity_analysis": f"Minor flooding: {risk_assessment['severity_levels']['minor_flooding']['probability']*100:.1f}%, Moderate: {risk_assessment['severity_levels']['moderate_flooding']['probability']*100:.1f}%, Severe: {risk_assessment['severity_levels']['severe_flooding']['probability']*100:.1f}%",
-                "temporal_analysis": f"Risk increases from {risk_assessment['time_windows']['next_24_hours']['probability']*100:.1f}% (24h) to {risk_assessment['time_windows']['next_7_days']['probability']*100:.1f}% (7d)",
-                "confidence_notes": f"Confidence level: {risk_assessment['confidence']['confidence_level']}",
-                "recommended_actions": self._get_recommendations(risk_assessment['overall_risk_score']),
-                "key_concerns": risk_assessment['risk_factors'],
-                "monitoring_priorities": ["Precipitation levels", "Soil saturation", "Water accumulation"]
-            }
+            "risk_assessment": risk_assessment
         }
+        
+        # Clean NaN/Inf values to make JSON serializable
+        final_result = self._clean_json_values(final_result)
         
         # Cleanup
         if os.path.exists(grib_file):
@@ -469,16 +586,6 @@ Be specific and actionable. Reference the actual probabilities."""
             print(f"[INFO] Cleaned up temporary file: {grib_file}")
         
         return final_result
-    
-    def _get_recommendations(self, score):
-        if score < 0.25:
-            return ["Continue routine monitoring", "No immediate action required"]
-        elif score < 0.5:
-            return ["Increase monitoring frequency", "Review emergency response plans", "Clear drainage systems"]
-        elif score < 0.75:
-            return ["Activate flood watch", "Prepare emergency supplies", "Alert vulnerable populations", "Monitor continuously"]
-        else:
-            return ["Activate flood warning", "Begin evacuations if needed", "Close affected roads", "Emergency response on standby"]
 
 
 # ============= MAIN EXECUTION =============
