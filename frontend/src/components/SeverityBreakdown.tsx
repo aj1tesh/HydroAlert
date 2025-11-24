@@ -68,7 +68,6 @@ function SeverityBreakdown({ result }: { result: FloodPredictionResult }) {
         })}
       </div>
 
-      {/* Overall Probability */}
       <div className="mt-6 pt-6 border-t border-gray-200">
         <div className="flex items-center justify-between">
           <span className="font-semibold text-gray-900">Overall Flood Probability</span>

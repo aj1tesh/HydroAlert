@@ -2,7 +2,6 @@ import { FloodPredictionResult } from '../services/api'
 import { AlertTriangle, CheckCircle, Info } from 'lucide-react'
 
 function RiskOverview({ result }: { result: FloodPredictionResult }) {
-  // Add null safety checks
   if (!result?.risk_assessment) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -29,7 +28,6 @@ function RiskOverview({ result }: { result: FloodPredictionResult }) {
       <h2 className="text-2xl font-bold text-gray-900 mb-6">Risk Overview</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Overall Risk Score */}
         <div className="bg-gradient-to-br from-primary-50 to-primary-100 rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-medium text-gray-700">Overall Risk Score</h3>
@@ -45,7 +43,6 @@ function RiskOverview({ result }: { result: FloodPredictionResult }) {
           </div>
         </div>
 
-        {/* Confidence Level */}
         <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-6">
           <h3 className="text-sm font-medium text-gray-700 mb-4">Confidence</h3>
           <div className="space-y-2">
@@ -61,7 +58,6 @@ function RiskOverview({ result }: { result: FloodPredictionResult }) {
           </div>
         </div>
 
-        {/* Location Info */}
         <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-lg p-6">
           <h3 className="text-sm font-medium text-gray-700 mb-4">Location</h3>
           <div className="space-y-1">
@@ -81,7 +77,6 @@ function RiskOverview({ result }: { result: FloodPredictionResult }) {
         </div>
       </div>
 
-      {/* Risk Factors */}
       {result.risk_assessment.risk_factors && result.risk_assessment.risk_factors.length > 0 && (
         <div className="mt-6 pt-6 border-t border-gray-200">
           <h3 className="text-sm font-medium text-gray-700 mb-3">Key Risk Factors</h3>

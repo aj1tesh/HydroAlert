@@ -9,19 +9,16 @@ from typing import Optional
 import sys
 import os
 
-# Add the flood_model directory to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flood_predictor import FloodPredictor
 
-# Initialize FastAPI app
 app = FastAPI(
     title="FLUD API",
     description="Flood Prediction and Risk Assessment API",
     version="1.0.0"
 )
 
-# Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -35,7 +32,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize the flood predictor (singleton)
 predictor = None
 
 def get_predictor():
@@ -50,7 +46,6 @@ def get_predictor():
     return predictor
 
 
-# Request/Response models
 class PredictionRequest(BaseModel):
     lat: float = Field(..., ge=-90, le=90, description="Latitude (-90 to 90)")
     lon: float = Field(..., ge=-180, le=180, description="Longitude (-180 to 180)")
@@ -98,7 +93,6 @@ async def predict_flood(request: PredictionRequest):
     - Time-windowed probabilities
     """
     try:
-        # Get predictor instance
         predictor = get_predictor()
         if predictor is None:
             raise HTTPException(
@@ -106,7 +100,6 @@ async def predict_flood(request: PredictionRequest):
                 detail="Flood predictor not initialized. Check CDS API configuration."
             )
         
-        # Validate coordinates
         if not (-90 <= request.lat <= 90):
             raise HTTPException(
                 status_code=400,
@@ -127,7 +120,6 @@ async def predict_flood(request: PredictionRequest):
         
         print(f"\n[API] Received prediction request: lat={request.lat}, lon={request.lon}, days={request.days}")
         
-        # Call the predictor
         result = predictor.predict_flood(
             lat=request.lat,
             lon=request.lon,
@@ -139,7 +131,6 @@ async def predict_flood(request: PredictionRequest):
         return result
     
     except HTTPException:
-        # Re-raise HTTP exceptions
         raise
     
     except Exception as e:
@@ -166,7 +157,7 @@ if __name__ == "__main__":
         "api_server:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,  # Auto-reload on code changes
+        reload=True,
         log_level="info"
     )
 

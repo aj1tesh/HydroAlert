@@ -6,19 +6,16 @@ function WeatherCharts({ result }: { result: FloodPredictionResult }) {
   const weather = result.weather_analysis
   const timeSeries = weather.time_series
 
-  // Prepare precipitation time series data
   const precipData = timeSeries?.precipitation_mm?.map((value, index) => ({
     time: `T${index + 1}`,
     precipitation: value != null && !isNaN(value) ? Number(value) : 0,
   })).filter(item => item.precipitation !== null) || []
 
-  // Prepare soil moisture time series data
   const soilData = timeSeries?.soil_moisture?.map((value, index) => ({
     time: `T${index + 1}`,
     moisture: value != null && !isNaN(value) ? (Number(value) * 100).toFixed(1) : '0.0',
   })).filter(item => item.moisture !== null) || []
 
-  // Weather summary data with null safety
   const safeValue = (val: number | null | undefined, defaultVal: number = 0) => {
     return val != null && !isNaN(val) ? Number(val) : defaultVal
   }
@@ -41,7 +38,6 @@ function WeatherCharts({ result }: { result: FloodPredictionResult }) {
         Weather Data Analysis
       </h2>
 
-      {/* Weather Summary Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {weatherSummary.map((item, index) => (
           <div key={index} className="bg-gray-50 rounded-lg p-3">
@@ -53,7 +49,6 @@ function WeatherCharts({ result }: { result: FloodPredictionResult }) {
         ))}
       </div>
 
-      {/* Precipitation Chart */}
       {precipData.length > 0 && (
         <div className="mb-6">
           <h3 className="text-sm font-medium text-gray-700 mb-3">Precipitation Over Time</h3>
@@ -76,7 +71,6 @@ function WeatherCharts({ result }: { result: FloodPredictionResult }) {
         </div>
       )}
 
-      {/* Soil Moisture Chart */}
       {soilData.length > 0 && (
         <div>
           <h3 className="text-sm font-medium text-gray-700 mb-3">Soil Moisture Over Time</h3>

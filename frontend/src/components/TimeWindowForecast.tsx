@@ -52,7 +52,6 @@ function TimeWindowForecast({ result }: { result: FloodPredictionResult }) {
         Time-Windowed Forecast
       </h2>
 
-      {/* Chart */}
       <div className="mb-6">
         <ResponsiveContainer width="100%" height={250}>
           <LineChart data={chartData}>
@@ -73,7 +72,6 @@ function TimeWindowForecast({ result }: { result: FloodPredictionResult }) {
         </ResponsiveContainer>
       </div>
 
-      {/* Time Window Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {forecastData.map((item) => (
           <div

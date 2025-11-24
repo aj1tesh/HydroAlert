@@ -7,7 +7,6 @@ import os
 import math
 import re
 
-# ============= CONFIGURATION =============
 
 class FloodPredictor:
     def __init__(self):
@@ -52,18 +51,13 @@ class FloodPredictor:
         """
         print(f"\n[INFO] Fetching weather data for coordinates: {lat}, {lon}")
         
-        # Calculate date range
-        # ERA5 data has a delay of ~5-7 days, so we use 7 days ago as the latest available date
-        # This ensures we don't request future/unavailable data
         today = datetime.now()
-        data_delay_days = 7  # ERA5 typically has 5-7 day delay
+        data_delay_days = 7
         latest_available_date = today - timedelta(days=data_delay_days)
         
-        # Use the latest available date as end_date, or go back further if needed
         end_date = latest_available_date
         start_date = end_date - timedelta(days=days)
         
-        # Ensure we don't go too far back (ERA5 data starts from 1940)
         if start_date.year < 1940:
             start_date = datetime(1940, 1, 1)
             print(f"[WARNING] Adjusted start date to 1940-01-01 (ERA5 data limit)")
@@ -71,11 +65,9 @@ class FloodPredictor:
         print(f"[INFO] Requesting data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         print(f"[INFO] Note: Using historical data due to ERA5 delay (~{data_delay_days} days)")
         
-        # Prepare request parameters
         years = list(set([start_date.strftime('%Y'), end_date.strftime('%Y')]))
         months = list(set([start_date.strftime('%m'), end_date.strftime('%m')]))
         
-        # Generate day list
         current = start_date
         days_list = []
         while current <= end_date:
@@ -83,7 +75,6 @@ class FloodPredictor:
             current += timedelta(days=1)
         days_list = list(set(days_list))
         
-        # Define area around the point (0.5 degree buffer)
         area = [
             lat + 0.5,  # North
             lon - 0.5,  # West
@@ -120,14 +111,11 @@ class FloodPredictor:
             return output_file
         except Exception as e:
             error_msg = str(e)
-            # Check if error is about data availability
             if "not available yet" in error_msg or "latest date available" in error_msg.lower():
                 print(f"[ERROR] CDS API request failed: {e}")
                 print(f"[INFO] ERA5 data has a delay. The error suggests using dates before the latest available date.")
                 print(f"[INFO] Try reducing the number of days or using historical dates.")
-                # Try to extract the latest available date from error message
                 if "latest date available" in error_msg.lower():
-                    # Error format: "The latest date available for this dataset is: 2025-11-14 05:00"
                     try:
                         date_match = re.search(r'(\d{4}-\d{2}-\d{2})', error_msg)
                         if date_match:
@@ -135,11 +123,9 @@ class FloodPredictor:
                             latest_date = datetime.strptime(latest_date_str, '%Y-%m-%d')
                             print(f"[INFO] Latest available date: {latest_date_str}")
                             print(f"[INFO] Retrying with adjusted date range...")
-                            # Retry with the latest available date
                             end_date = latest_date
                             start_date = end_date - timedelta(days=days)
                             
-                            # Recalculate parameters
                             years = list(set([start_date.strftime('%Y'), end_date.strftime('%Y')]))
                             months = list(set([start_date.strftime('%m'), end_date.strftime('%m')]))
                             current = start_date
@@ -151,7 +137,6 @@ class FloodPredictor:
                             
                             print(f"[INFO] Retrying with dates: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
                             
-                            # Retry the request
                             self.cds_client.retrieve(
                                 'reanalysis-era5-single-levels',
                                 {
@@ -203,7 +188,6 @@ class FloodPredictor:
             analysis = {}
             time_series = {}
             
-            # Read each variable separately
             variable_mapping = {
                 'tp': 'total_precipitation',
                 't2m': '2m_temperature', 
@@ -227,14 +211,12 @@ class FloodPredictor:
             if not datasets:
                 raise ValueError("Could not load any variables from GRIB file")
             
-            # Process precipitation with time series
             if 'tp' in datasets:
                 ds = datasets['tp']
                 if 'tp' in ds.data_vars:
                     precip = ds['tp'].values
-                    precip_mm = precip * 1000  # m to mm
+                    precip_mm = precip * 1000
                     
-                    # Overall statistics - handle NaN/Inf values
                     total_precip = np.nansum(precip_mm)
                     if np.all(np.isnan(precip_mm)):
                         max_precip = 0.0
@@ -248,24 +230,19 @@ class FloodPredictor:
                     analysis['avg_precipitation_mm'] = float(avg_precip) if not (math.isnan(avg_precip) or math.isinf(avg_precip)) else 0.0
                     analysis['precip_days'] = int(np.nansum(precip_mm > 1.0))
                     
-                    # Time series for temporal analysis
                     if precip_mm.ndim >= 1:
-                        # Flatten spatial dimensions, keep time
-                        if precip_mm.ndim == 3:  # time, lat, lon
+                        if precip_mm.ndim == 3:
                             precip_time = np.nanmean(precip_mm, axis=(1, 2))
-                        elif precip_mm.ndim == 2:  # time, space
+                        elif precip_mm.ndim == 2:
                             precip_time = np.nanmean(precip_mm, axis=1)
                         else:
                             precip_time = precip_mm
                         
-                        # Ensure it's 1D and flatten if needed
                         precip_time = precip_time.flatten() if precip_time.ndim > 1 else precip_time
                         
-                        # Convert to list, replacing NaN with None
                         def clean_value(x):
                             """Helper to clean a single value"""
                             if isinstance(x, (list, np.ndarray)):
-                                # If it's still a list/array, take the mean
                                 x = np.nanmean(np.array(x))
                             if isinstance(x, np.floating):
                                 if np.isnan(x):
@@ -288,12 +265,11 @@ class FloodPredictor:
                     
                     print(f"[INFO] Precipitation - Total: {analysis['total_precipitation_mm']:.2f}mm")
             
-            # Process temperature
             if 't2m' in datasets:
                 ds = datasets['t2m']
                 if 't2m' in ds.data_vars:
                     temp = ds['t2m'].values
-                    temp_c = temp - 273.15  # K to C
+                    temp_c = temp - 273.15
                     if np.all(np.isnan(temp_c)):
                         avg_temp = 0.0
                         min_temp = 0.0
@@ -305,7 +281,6 @@ class FloodPredictor:
                     analysis['min_temperature_c'] = float(min_temp) if not (math.isnan(min_temp) or math.isinf(min_temp)) else 0.0
                     print(f"[INFO] Temperature - Avg: {analysis['avg_temperature_c']:.1f}°C")
             
-            # Process soil moisture with time series
             if 'swvl1' in datasets:
                 ds = datasets['swvl1']
                 if 'swvl1' in ds.data_vars:
@@ -323,7 +298,6 @@ class FloodPredictor:
                     analysis['max_soil_moisture'] = float(max_soil) if not (math.isnan(max_soil) or math.isinf(max_soil)) else 0.0
                     analysis['soil_saturation_ratio'] = float(sat_ratio) if not (math.isnan(sat_ratio) or math.isinf(sat_ratio)) else 0.0
                     
-                    # Time series
                     if soil_moisture.ndim >= 1:
                         if soil_moisture.ndim == 3:
                             soil_time = np.nanmean(soil_moisture, axis=(1, 2))
@@ -332,14 +306,11 @@ class FloodPredictor:
                         else:
                             soil_time = soil_moisture
                         
-                        # Ensure it's 1D and flatten if needed
                         soil_time = soil_time.flatten() if soil_time.ndim > 1 else soil_time
                         
-                        # Convert to list, replacing NaN with None
                         def clean_value(x):
                             """Helper to clean a single value"""
                             if isinstance(x, (list, np.ndarray)):
-                                # If it's still a list/array, take the mean
                                 x = np.nanmean(np.array(x))
                             if isinstance(x, np.floating):
                                 if np.isnan(x):
@@ -362,7 +333,6 @@ class FloodPredictor:
                     
                     print(f"[INFO] Soil Moisture - Avg: {analysis['avg_soil_moisture']:.3f}")
             
-            # Close all datasets
             for ds in datasets.values():
                 ds.close()
             
@@ -383,29 +353,24 @@ class FloodPredictor:
         """
         print("\n[INFO] Calculating comprehensive flood risk...")
         
-        # Base risk factors
         precip_total = analysis.get('total_precipitation_mm', 0)
         precip_max = analysis.get('max_hourly_precip_mm', 0)
         soil_sat = analysis.get('soil_saturation_ratio', 0)
         precip_days = analysis.get('precip_days', 0)
         
-        # === 1. SEVERITY LEVELS ===
         severity_probs = self._calculate_severity_probabilities(
             precip_total, precip_max, soil_sat, precip_days
         )
         
-        # === 2. TIME-WINDOWED PROBABILITIES ===
         time_probs = self._calculate_time_windowed_probabilities(
             analysis.get('time_series', {}), precip_total, soil_sat
         )
         
-        # === 3. CONFIDENCE INTERVALS ===
         base_prob = severity_probs['overall']
         confidence_intervals = self._calculate_confidence_intervals(
             base_prob, precip_total, soil_sat, precip_days
         )
         
-        # Risk factors explanation
         risk_factors = []
         if precip_total > 50:
             risk_factors.append(f"High total precipitation: {precip_total:.1f}mm")
@@ -428,26 +393,20 @@ class FloodPredictor:
         """
         Calculate probability for each flood severity level
         """
-        # Base score components
-        precip_score = min(precip_total / 200, 1.0)  # 0-1
-        intensity_score = min(precip_max / 30, 1.0)  # 0-1
-        soil_score = soil_sat  # already 0-1
-        duration_score = min(precip_days / 7, 1.0)  # 0-1
+        precip_score = min(precip_total / 200, 1.0)
+        intensity_score = min(precip_max / 30, 1.0)
+        soil_score = soil_sat
+        duration_score = min(precip_days / 7, 1.0)
         
-        # Overall base probability
         base_prob = (precip_score * 0.4 + intensity_score * 0.3 + 
                      soil_score * 0.2 + duration_score * 0.1)
         
-        # Severity thresholds and probabilities
-        # Minor: 0-30cm water depth
         prob_minor = base_prob * 0.8 if base_prob > 0.2 else base_prob * 1.2
         prob_minor = min(prob_minor, 1.0)
         
-        # Moderate: 30-100cm water depth
         prob_moderate = base_prob * 0.6 if base_prob > 0.4 else base_prob * 0.3
         prob_moderate = min(prob_moderate, 1.0)
         
-        # Severe: >100cm water depth
         prob_severe = base_prob * 0.4 if base_prob > 0.6 else base_prob * 0.1
         prob_severe = min(prob_severe, 1.0)
         
@@ -471,24 +430,19 @@ class FloodPredictor:
         """
         Calculate flood probability for different time windows
         """
-        # If we have time series data, use it for better estimates
         recent_precip_trend = 0
         if 'precipitation_mm' in time_series and len(time_series['precipitation_mm']) > 0:
             precip_data = time_series['precipitation_mm']
-            # Look at recent vs older data
             if len(precip_data) >= 4:
-                recent_avg = np.mean(precip_data[-2:])  # Last 2 readings
-                older_avg = np.mean(precip_data[:-2])  # Older readings
+                recent_avg = np.mean(precip_data[-2:])
+                older_avg = np.mean(precip_data[:-2])
                 recent_precip_trend = recent_avg - older_avg
         
-        # Base probability
         base = min((precip_total / 100) * 0.5 + soil_sat * 0.5, 1.0)
         
-        # Adjust based on trends
-        trend_factor = 1.0 + (recent_precip_trend / 10)  # Normalize trend
-        trend_factor = max(0.5, min(trend_factor, 2.0))  # Limit to 0.5-2x
+        trend_factor = 1.0 + (recent_precip_trend / 10)
+        trend_factor = max(0.5, min(trend_factor, 2.0))
         
-        # Time windows with increasing probability
         prob_24h = min(base * 0.6 * trend_factor, 1.0)
         prob_48h = min(base * 0.8 * trend_factor, 1.0)
         prob_72h = min(base * 1.0 * trend_factor, 1.0)
@@ -517,22 +471,18 @@ class FloodPredictor:
         """
         Calculate confidence intervals for the probability estimate
         """
-        # Uncertainty factors
-        data_uncertainty = 0.15  # Base uncertainty from ERA5 data
+        data_uncertainty = 0.15
         
-        # Reduce uncertainty if we have strong signals
         if precip_total > 100 or soil_sat > 0.7:
-            data_uncertainty *= 0.7  # More confident
+            data_uncertainty *= 0.7
         elif precip_total < 10 and soil_sat < 0.2:
-            data_uncertainty *= 0.8  # Also confident (clearly low risk)
+            data_uncertainty *= 0.8
         else:
-            data_uncertainty *= 1.2  # Less confident in middle range
+            data_uncertainty *= 1.2
         
-        # Calculate bounds
         lower_bound = max(0, base_prob - data_uncertainty)
         upper_bound = min(1.0, base_prob + data_uncertainty)
         
-        # Confidence level
         if data_uncertainty < 0.1:
             confidence_level = "high"
         elif data_uncertainty < 0.15:
@@ -559,16 +509,12 @@ class FloodPredictor:
         print(f"Location: {lat}°N, {lon}°E")
         print(f"Analysis period: {days} days")
         
-        # Step 1: Fetch weather data
         grib_file = self.fetch_weather_data(lat, lon, days)
         
-        # Step 2: Analyze data
         analysis = self.analyze_weather_data(grib_file)
         
-        # Step 3: Calculate comprehensive risk
         risk_assessment = self.calculate_comprehensive_flood_risk(analysis)
         
-        # Step 4: Compile final result
         final_result = {
             "location": {"lat": lat, "lon": lon},
             "timestamp": datetime.now().isoformat(),
@@ -577,10 +523,8 @@ class FloodPredictor:
             "risk_assessment": risk_assessment
         }
         
-        # Clean NaN/Inf values to make JSON serializable
         final_result = self._clean_json_values(final_result)
         
-        # Cleanup
         if os.path.exists(grib_file):
             os.remove(grib_file)
             print(f"[INFO] Cleaned up temporary file: {grib_file}")
@@ -588,9 +532,7 @@ class FloodPredictor:
         return final_result
 
 
-# ============= MAIN EXECUTION =============
 if __name__ == "__main__":
-    # Example coordinates (Lucknow area)
     LAT = 16.5062
     LON = 80.6480
     

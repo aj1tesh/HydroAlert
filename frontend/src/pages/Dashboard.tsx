@@ -7,7 +7,6 @@ import TimeWindowForecast from '../components/TimeWindowForecast'
 import api, { FloodPredictionResult } from '../services/api'
 import { AlertCircle, Loader2 } from 'lucide-react'
 
-// Error Boundary Component
 class ErrorBoundary extends Component<
   { children: ReactNode },
   { hasError: boolean; error: Error | null }
@@ -59,17 +58,14 @@ function Dashboard() {
     try {
       let data: FloodPredictionResult
       if (useMockData) {
-        // Simulate API delay
         await new Promise((resolve) => setTimeout(resolve, 1500))
         data = api.getMockData()
       } else {
         data = await api.predictFlood(lat, lon, days)
       }
       
-      // Log the response for debugging
       console.log('Prediction result received:', data)
       
-      // Validate the response structure
       if (!data || !data.risk_assessment) {
         throw new Error('Invalid response format: missing risk_assessment')
       }
@@ -78,7 +74,7 @@ function Dashboard() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
       console.error('Prediction error:', err)
-      setResult(null) // Clear any partial result
+      setResult(null)
     } finally {
       setLoading(false)
     }
@@ -86,7 +82,6 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-cyan-50">
-      {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
@@ -109,14 +104,11 @@ function Dashboard() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Location Input Section */}
         <div className="mb-8">
           <LocationInput onPredict={handlePredict} loading={loading} />
         </div>
 
-        {/* Error Display */}
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
             <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
@@ -130,7 +122,6 @@ function Dashboard() {
           </div>
         )}
 
-        {/* Loading State */}
         {loading && (
           <div className="flex flex-col items-center justify-center py-12">
             <Loader2 className="animate-spin text-primary-600 mb-4" size={48} />
@@ -138,15 +129,12 @@ function Dashboard() {
           </div>
         )}
 
-        {/* Results */}
         {result && !loading && (
           <div className="space-y-6">
-            {/* Risk Overview Card */}
             <ErrorBoundary>
               <RiskOverview result={result} />
             </ErrorBoundary>
 
-            {/* Charts and Detailed Analysis */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <ErrorBoundary>
                 <WeatherCharts result={result} />
@@ -156,14 +144,12 @@ function Dashboard() {
               </ErrorBoundary>
             </div>
 
-            {/* Time Window Forecast */}
             <ErrorBoundary>
               <TimeWindowForecast result={result} />
             </ErrorBoundary>
           </div>
         )}
 
-        {/* Empty State */}
         {!result && !loading && !error && (
           <div className="text-center py-12">
             <div className="max-w-md mx-auto">
@@ -184,7 +170,6 @@ function Dashboard() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <p className="text-center text-sm text-gray-600">

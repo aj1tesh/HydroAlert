@@ -1,11 +1,6 @@
-# FLUD Backend Dependencies
-
-# API Server
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pydantic>=2.0.0
-
-# Flood Prediction
 cdsapi>=0.6.0
 xarray>=2023.8.0
 netCDF4>=1.6.4
@@ -13,7 +8,5 @@ cfgrib>=0.9.10.3
 numpy>=1.24.0
 pandas>=2.0.0
 requests>=2.31.0
-
-# Optional: For better performance
 python-multipart>=0.0.6
 
