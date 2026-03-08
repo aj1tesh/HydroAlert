@@ -1,10 +1,3 @@
-# flood_with_cdsapi.py
-# Prototype: coordinates -> CDSAPI (GloFAS forecast & historical) -> compute exceedance probability over 2-year return period threshold -> Ollama explain
-# Requirements: cdsapi, xarray, netCDF4, requests, numpy
-# Note: If not installed, run: pip install xarray netCDF4 requests numpy
-# CDSAPI must be configured with API key as per https://cds.climate.copernicus.eu/api-how-to
-# Ollama running locally with model gemma3:12b pulled
-
 import cdsapi
 import xarray as xr
 import numpy as np
@@ -12,13 +5,10 @@ import json
 import requests
 from datetime import datetime, timezone
 
-# === CONFIG ===
-OLLAMA_URL = "http://localhost:11434/api/generate"             # Ollama local API
-OLLAMA_MODEL = "gemma3:12b"                                    # Your local model
+OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_MODEL = "gemma3:12b"                                   
 TIMEZONE = "UTC"
-RETURN_PERIOD = 2                                              # Years for flood threshold (e.g., 2-year return period)
-
-# === Helpers ===
+RETURN_PERIOD = 2                                             
 
 def get_bounding_box(lat, lon, delta=0.1):
     """Small bounding box around point to subset data"""
@@ -28,7 +18,7 @@ def fetch_historical_discharge(lat, lon):
     """Fetch historical GloFAS data to compute return period threshold"""
     area = get_bounding_box(lat, lon)
     c = cdsapi.Client()
-    years = [str(y) for y in range(1995, 2025)]  # 30 years for robust stats
+    years = [str(y) for y in range(1995, 2025)] 
     months = [f'{m:02d}' for m in range(1, 13)]
     days = [f'{d:02d}' for d in range(1, 32)]
     print(f"Fetching historical GloFAS data for {lat},{lon}...")
@@ -105,14 +95,6 @@ def fetch_forecast_discharge(lat, lon, days=7):
     return times, ensemble, meta
 
 def compute_exceedance_probability(ensemble, threshold):
-    """
-    ensemble : np.array shape (n_members, n_timesteps)
-    threshold : scalar (e.g., m^3/s)
-    Returns:
-      - probability [0-1] that any ensemble member exceeds threshold at any time in forecast horizon
-      - time_series_exceedance_prob (per timestep fraction of members exceeding threshold)
-      - max_exceedance_fraction (max over timesteps)
-    """
     if ensemble.size == 0:
         return 0.0, None, 0.0
     exceed = ensemble > threshold
@@ -123,10 +105,6 @@ def compute_exceedance_probability(ensemble, threshold):
     return float(prob_any), frac_per_t.tolist(), float(max_frac)
 
 def call_ollama_explain(model, prompt, format_json=True, timeout=60):
-    """
-    Call local Ollama generate endpoint. Ask for JSON output when format_json True.
-    Returns parsed JSON or raw text.
-    """
     payload = {"model": model, "prompt": prompt, "stream": False}
     if format_json:
         payload["format"] = "json"
@@ -144,13 +122,6 @@ def call_ollama_explain(model, prompt, format_json=True, timeout=60):
 # === Main high-level function ===
 
 def predict_flood_probability_with_ollama(lat, lon, threshold=None, days=7, ollama_model=OLLAMA_MODEL, return_period=RETURN_PERIOD):
-    """
-    Steps:
-      1) Fetch historical GloFAS via CDSAPI to compute threshold (if not provided)
-      2) Fetch forecast ensemble via CDSAPI
-      3) Compute exceedance probability
-      4) Ask Ollama to explain & return JSON with probability + reasoning
-    """
     auto_thresh_used = False
     if threshold is None:
         print(f"[{datetime.now(timezone.utc).isoformat()}] Fetching historical data for threshold...")
@@ -208,10 +179,9 @@ def predict_flood_probability_with_ollama(lat, lon, threshold=None, days=7, olla
         ollama_out["raw_meta"] = meta
     return ollama_out
 
-# === Example run ===
 if __name__ == "__main__":
-    # Example coordinates (change to your coordinates)
-    lat = 26.8467   # Lucknow-ish (example)
+    # Example coordinates
+    lat = 26.8467
     lon = 80.9462
 
     result = predict_flood_probability_with_ollama(lat, lon, threshold=None, days=7, ollama_model=OLLAMA_MODEL)

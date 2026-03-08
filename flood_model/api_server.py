@@ -1,7 +1,3 @@
-"""
-FLUD Backend API Server
-Provides REST API endpoints for flood prediction
-"""
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -19,14 +15,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -54,7 +50,6 @@ class PredictionRequest(BaseModel):
 
 @app.get("/")
 async def root():
-    """Root endpoint - API information"""
     return {
         "name": "FLUD API",
         "version": "1.0.0",
@@ -69,7 +64,6 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
     predictor = get_predictor()
     return {
         "status": "healthy",
@@ -80,18 +74,6 @@ async def health_check():
 
 @app.post("/api/predict")
 async def predict_flood(request: PredictionRequest):
-    """
-    Predict flood risk for given coordinates
-    
-    - **lat**: Latitude coordinate (-90 to 90)
-    - **lon**: Longitude coordinate (-180 to 180)
-    - **days**: Analysis period in days (1-30, default: 7)
-    
-    Returns comprehensive flood risk assessment including:
-    - Weather analysis
-    - Risk assessment with severity levels
-    - Time-windowed probabilities
-    """
     try:
         predictor = get_predictor()
         if predictor is None:

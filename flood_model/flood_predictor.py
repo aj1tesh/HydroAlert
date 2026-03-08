@@ -13,10 +13,6 @@ class FloodPredictor:
         self.cds_client = cdsapi.Client()
     
     def _clean_json_values(self, obj):
-        """
-        Recursively clean NaN, Inf, and -Inf values from a dictionary/list
-        to make it JSON serializable. Replaces NaN with None, Inf with large number.
-        """
         if isinstance(obj, dict):
             return {key: self._clean_json_values(value) for key, value in obj.items()}
         elif isinstance(obj, list):
@@ -43,12 +39,6 @@ class FloodPredictor:
             return obj
         
     def fetch_weather_data(self, lat, lon, days=7):
-        """
-        Fetch relevant weather data from CDS ERA5 for flood prediction
-        
-        Note: ERA5 reanalysis data has a delay of ~5-7 days, so we adjust
-        the end date to ensure we only request available data.
-        """
         print(f"\n[INFO] Fetching weather data for coordinates: {lat}, {lon}")
         
         today = datetime.now()
@@ -168,9 +158,6 @@ class FloodPredictor:
             raise
     
     def analyze_weather_data(self, grib_file):
-        """
-        Analyze the downloaded GRIB file and extract flood risk indicators with time series
-        """
         print("\n[INFO] Analyzing weather data...")
         
         if not os.path.exists(grib_file):
@@ -345,12 +332,6 @@ class FloodPredictor:
             raise
     
     def calculate_comprehensive_flood_risk(self, analysis):
-        """
-        Calculate comprehensive flood risk with:
-        1. Severity levels (minor/moderate/severe)
-        2. Time-windowed probabilities (24h/48h/72h)
-        3. Confidence intervals
-        """
         print("\n[INFO] Calculating comprehensive flood risk...")
         
         precip_total = analysis.get('total_precipitation_mm', 0)
@@ -390,9 +371,6 @@ class FloodPredictor:
         }
     
     def _calculate_severity_probabilities(self, precip_total, precip_max, soil_sat, precip_days):
-        """
-        Calculate probability for each flood severity level
-        """
         precip_score = min(precip_total / 200, 1.0)
         intensity_score = min(precip_max / 30, 1.0)
         soil_score = soil_sat
@@ -427,9 +405,6 @@ class FloodPredictor:
         }
     
     def _calculate_time_windowed_probabilities(self, time_series, precip_total, soil_sat):
-        """
-        Calculate flood probability for different time windows
-        """
         recent_precip_trend = 0
         if 'precipitation_mm' in time_series and len(time_series['precipitation_mm']) > 0:
             precip_data = time_series['precipitation_mm']
@@ -468,9 +443,6 @@ class FloodPredictor:
         }
     
     def _calculate_confidence_intervals(self, base_prob, precip_total, soil_sat, precip_days):
-        """
-        Calculate confidence intervals for the probability estimate
-        """
         data_uncertainty = 0.15
         
         if precip_total > 100 or soil_sat > 0.7:
@@ -500,9 +472,6 @@ class FloodPredictor:
         }
     
     def predict_flood(self, lat, lon, days=7):
-        """
-        Main prediction function with comprehensive risk assessment
-        """
         print("="*60)
         print("COMPREHENSIVE FLOOD PREDICTION SYSTEM")
         print("="*60)
