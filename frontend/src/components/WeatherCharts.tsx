@@ -1,6 +1,6 @@
 import { FloodPredictionResult } from '../services/api'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { CloudRain, Thermometer } from 'lucide-react'
+import { CloudRain } from 'lucide-react'
 
 function WeatherCharts({ result }: { result: FloodPredictionResult }) {
   const weather = result.weather_analysis
